@@ -1,0 +1,7 @@
+easyutils
+pandas
+Pillow
+pytesseract
+pywinauto
+requests
+urllib3

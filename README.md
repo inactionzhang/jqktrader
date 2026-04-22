@@ -53,10 +53,10 @@
 
 ## 依赖
 
-仓库里暂未提供 `requirements.txt`，从代码依赖看，至少需要这些包：
+项目已经提供了 [requirements.txt](/c:/ai/jqktrader/requirements.txt:1)，可以直接安装：
 
 ```bash
-pip install pywinauto pandas easyutils pillow pytesseract requests urllib3
+pip install -r requirements.txt
 ```
 
 如果需要识别验证码，还需要额外安装 Tesseract 可执行程序，并把路径传给 `connect(..., tesseract_cmd=...)` 或 HTTP 服务启动参数 `--tesseract-cmd`。
