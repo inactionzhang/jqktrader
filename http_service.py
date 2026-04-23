@@ -208,7 +208,13 @@ class TraderHttpService:
     def invoke_trader(self, name: str, args: list, kwargs: dict) -> Dict[str, Any]:
         with self.call_lock:
             self._ensure_connected(name)
-            return self.invoke_target(self.trader, name, args, kwargs)
+            try:
+                return self.invoke_target(self.trader, name, args, kwargs)
+            except Exception:
+                if not self._should_reconnect_after_failure(name):
+                    raise
+                self._reconnect()
+                return self.invoke_target(self.trader, name, args, kwargs)
 
     def invoke_object(self, handle: str, name: str, args: list, kwargs: dict) -> Dict[str, Any]:
         target = self.registry.get(handle)
@@ -232,14 +238,55 @@ class TraderHttpService:
             return
         if not self.auto_connect:
             return
-        if self._is_connected():
+        if self._is_connection_alive():
             return
-        self.trader.connect(**self.auto_connect_kwargs)
+        self._reconnect()
 
     def _is_connected(self) -> bool:
         return getattr(self.trader, "app", None) is not None and getattr(
             self.trader, "main", None
         ) is not None
+
+    def _resolve_window(self, window: Any) -> Any:
+        resolver = getattr(window, "wrapper_object", None)
+        if callable(resolver):
+            return resolver()
+        return window
+
+    def _is_connection_alive(self) -> bool:
+        if not self._is_connected():
+            return False
+
+        try:
+            self._resolve_window(self.trader.app.top_window())
+            self._resolve_window(self.trader.main)
+        except Exception:
+            return False
+        return True
+
+    def _reset_connection_state(self) -> None:
+        for attr in ("_app", "_main", "_toolbar"):
+            if hasattr(self.trader, attr):
+                setattr(self.trader, attr, None)
+
+    def _reconnect(self) -> None:
+        self._reset_connection_state()
+        self.trader.connect(**self.auto_connect_kwargs)
+
+    def _should_reconnect_after_failure(self, method_name: str) -> bool:
+        if method_name == "connect":
+            return False
+        if not self.auto_connect:
+            return False
+        return not self._is_connection_alive()
+
+    def connection_status(self) -> Dict[str, bool]:
+        connected = self._is_connected()
+        return {
+            "connected": connected,
+            "connection_alive": self._is_connection_alive() if connected else False,
+            "auto_connect": self.auto_connect,
+        }
 
 
 def create_handler(service: TraderHttpService):
@@ -318,7 +365,13 @@ def create_handler(service: TraderHttpService):
                     return
 
                 if path == "/health":
-                    self._send_json({"ok": True, "status": "healthy"})
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "status": "healthy",
+                            "trader": service.connection_status(),
+                        }
+                    )
                     return
 
                 if path == "/interfaces":
