@@ -5,9 +5,9 @@ from PIL import Image
 import logging
 from typing import List, Dict
 
-import cv2
+
 from jqktrader import exceptions
-import pytesseract
+
 
 logger = logging.getLogger(__name__)
 
