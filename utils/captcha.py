@@ -2,11 +2,65 @@ import re
 
 import requests
 from PIL import Image
+import logging
+from typing import List, Dict
 
+import cv2
 from jqktrader import exceptions
+import pytesseract
 
+logger = logging.getLogger(__name__)
 
-def captcha_recognize(img_path):
+def captcha_recognize(img_path: str) -> str:
+    """验证码识别"""
+    try:
+        img = cv2.imread(img_path)
+        if img is None:
+            return ""
+        # 放大图片
+        img = cv2.resize(
+            img,
+            None,
+            fx=4,
+            fy=4,
+            interpolation=cv2.INTER_CUBIC
+        )
+        # 灰度化
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # 二值化
+        _, thresh = cv2.threshold(
+            gray,
+            180,
+            255,
+            cv2.THRESH_BINARY
+        )
+        # 去噪
+        thresh = cv2.medianBlur(thresh, 3)
+        # OCR配置
+        config = (
+            "--psm 7 "
+            "--oem 3 "
+            "-c tessedit_char_whitelist=0123456789"
+        )
+
+        # OCR识别
+        text = pytesseract.image_to_string(
+            thresh,
+            config=config
+        )
+
+        # 仅保留数字
+        text = ''.join(filter(str.isdigit, text))
+
+        logger.info(f"OCR result: {text}")
+
+        return text[:4]
+
+    except Exception as e:
+        logger.exception(e)
+        return ""
+
+def captcha_recognize_bak(img_path):
     import pytesseract
 
     im = Image.open(img_path).convert("L")
