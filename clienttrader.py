@@ -63,7 +63,9 @@ class IClientTrader(abc.ABC):
 class ClientTrader(IClientTrader):
     _editor_need_type_keys = False
     # The strategy to use for getting grid data
-    grid_strategy: Union[IGridStrategy, Type[IGridStrategy]] = grid_strategies.Copy
+    # 默认使用 WMCopy：通过 WM_COMMAND 消息通知表格复制到剪贴板，
+    # 不依赖键盘焦点，避免焦点被其他窗口抢占导致复制的剪贴板内容错误。
+    grid_strategy: Union[IGridStrategy, Type[IGridStrategy]] = grid_strategies.WMCopy
     _grid_strategy_instance: IGridStrategy = None
     refresh_strategy: IRefreshStrategy = refresh_strategies.Switch()
 
@@ -109,6 +111,16 @@ class ClientTrader(IClientTrader):
         :return:
         """
         # tesseract地址
+        if tesseract_cmd is None:
+            # 未指定时自动探测常见安装路径，避免验证码识别因找不到 tesseract 而失败
+            _candidates = [
+                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+            ]
+            tesseract_cmd = next(
+                (p for p in _candidates if os.path.exists(p)), None
+            )
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
         connect_path = exe_path or self._config.DEFAULT_EXE_PATH
