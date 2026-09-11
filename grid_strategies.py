@@ -51,10 +51,22 @@ class BaseStrategy(IGridStrategy):
         pass
 
     def _get_grid(self, control_id: int):
-        grid = self._trader.main.child_window(
+        # 同花顺"资金股票"等页面存在多个相同 control_id 的隐藏表格控件，
+        # 直接用 child_window 匹配会产生歧义，导致复制/导出作用在错误的控件上。
+        # 这里遍历所有匹配控件，优先返回可见的那个。
+        grids = self._trader.main.descendants(
             control_id=control_id, class_name="CVirtualGridCtrl"
         )
-        return grid
+        for grid in grids:
+            try:
+                if grid.is_visible():
+                    return grid
+            except Exception:
+                continue
+        # 兜底：找不到可见表格时，回退到原来的 child_window 匹配
+        return self._trader.main.child_window(
+            control_id=control_id, class_name="CVirtualGridCtrl"
+        )
 
     def _set_foreground(self, grid=None):
         try:
@@ -81,21 +93,38 @@ class Copy(BaseStrategy):
     def get(self, control_id: int) -> List[Dict]:
         grid = self._get_grid(control_id)
         self._set_foreground(grid)
-        grid.type_keys("^A^C", set_foreground=False)
-        content = self._get_clipboard_data()
-        return self._format_grid_data(content)
+        retry = 3
+        while retry > 0:
+            grid.type_keys("^A^C", set_foreground=False)
+            content = self._get_clipboard_data()
+            data = self._format_grid_data(content)
+            if data:
+                return data
+            # 剪贴板可能被其他进程覆写为无关内容，重试复制
+            retry -= 1
+            self._trader.wait(0.2)
+        return None
 
     def _format_grid_data(self, data: str) -> List[Dict]:
         try:
+            if not data or len(data.strip()) < 2:
+                return None
             df = pd.read_csv(
                 io.StringIO(data),
                 delimiter="\t",
                 dtype=self._trader.config.GRID_DTYPE,
                 na_filter=False,
             )
+            # 正常表格应有表头；若剪贴板被覆写为单格文本（如普通词语），
+            # 解析结果会是单行单列，视为无效数据
+            if df.shape[0] == 0 or df.shape[1] < 2:
+                return None
+            # 清理剪贴板末尾多余字段产生的空列（如 Unnamed: N）
+            df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed: ")]
             return df.to_dict("records")
         except:
             Copy._need_captcha_reg = True
+            return None
 
     def _get_clipboard_data(self) -> str:
         print("start 1")
